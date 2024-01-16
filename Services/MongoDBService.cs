@@ -2,78 +2,43 @@ using MyAspNetApi.Models;
 using Microsoft.Extensions.Options;
 using MongoDB.Driver;
 using MongoDB.Bson;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 
 namespace MyAspNetApi.Services;
 
-public class MongoDBService
-{
-    private readonly Dictionary<string, Dictionary<Type, object>> _databaseCollections;
+public class MongoDBService {
 
-    public MongoDBService(IConfiguration configuration, IOptions<Dictionary<string, MongoDBSettings>> databaseSettings)
-    {
-        _databaseCollections = new Dictionary<string, Dictionary<Type, object>>();
-        var mongoClient = new MongoClient(configuration.GetConnectionString("MongoDB:Database1:ConnectionURI"));
-        var database1 = mongoClient.GetDatabase(configuration["MongoDB:Database1:DatabaseName"]);
-        var database2 = mongoClient.GetDatabase(configuration["MongoDB:Database2:DatabaseName"]);
+    private readonly IMongoCollection<Playlist> _playlistCollection;
 
-        var collection1 = database1.GetCollection<Playlist>(configuration["MongoDB:Database1:CollectionName"]);
-        var collection2 = database2.GetCollection<Locations>(configuration["MongoDB:Database2:CollectionName"]);
-
-        var collections1 = new Dictionary<Type, object> { { typeof(Playlist), collection1 } };
-        var collections2 = new Dictionary<Type, object> { { typeof(Locations), collection2 } };
-
-        _databaseCollections.Add("Database1", collections1);
-        _databaseCollections.Add("Database2", collections2);
+    public MongoDBService(IOptions<Dictionary<string, MongoDBSettings>> mongoDBSettings) {
+        MongoClient client = new MongoClient(mongoDBSettings.Value.ConnectionURI);
+        IMongoDatabase database = client.GetDatabase(mongoDBSettings.Value.DatabaseName);
+        _playlistCollection = database.GetCollection<Playlist>(mongoDBSettings.Value.CollectionName);
     }
 
-    /* Create operation */
-    public async Task CreateAsync<T>(string databaseName, T item)
-    {
-        var collection = GetCollection<T>(databaseName);
-        await collection.InsertOneAsync(item);
+    /* post/create operation */
+    public async Task CreateAsync(Playlist playlist) { 
+        await _playlistCollection.InsertOneAsync(playlist);
+        return;
     }
 
-    /* Get operation */
-    public async Task<List<T>> GetAsync<T>(string databaseName)
-    {
-        var collection = GetCollection<T>(databaseName);
-        var filter = new BsonDocument();
-        return await collection.Find(filter).ToListAsync();
+    /* get/read operation */
+    public async Task<List<Playlist>> GetAsync() { 
+        return await _playlistCollection.Find(new BsonDocument()).ToListAsync();
     }
 
-    /* Update operation */
-    public async Task UpdateAsync<T>(string databaseName, string id, UpdateDefinition<T> updateDefinition)
-    {
-        var collection = GetCollection<T>(databaseName);
-        var filter = Builders<T>.Filter.Eq("Id", id);
-        await collection.UpdateOneAsync(filter, updateDefinition);
+    /* put/update operation */
+    public async Task AddToPlaylistAsync(string id, string movieId) {
+        FilterDefinition<Playlist> filter = Builders<Playlist>.Filter.Eq("Id", id);
+        UpdateDefinition<Playlist> update = Builders<Playlist>.Update.AddToSet<string>("items", movieId);
+        await _playlistCollection.UpdateOneAsync(filter, update);
+        return;
     }
 
-    /* Delete operation */
-    public async Task DeleteAsync<T>(string databaseName, string id)
-    {
-        var collection = GetCollection<T>(databaseName);
-        var filter = Builders<T>.Filter.Eq("Id", id);
-        await collection.DeleteOneAsync(filter);
+    /* delete operation */
+    public async Task DeleteAsync(string id) {
+        FilterDefinition<Playlist> filter = Builders<Playlist>.Filter.Eq("Id", id);
+        await _playlistCollection.DeleteOneAsync(filter);
+        return;
     }
 
-    private IMongoCollection<T> GetCollection<T>(string databaseName)
-    {
-        if (!_databaseCollections.TryGetValue(databaseName, out var collections))
-        {
-            throw new ArgumentException($"Database with name '{databaseName}' does not exist.");
-        }
-
-        var type = typeof(T);
-        if (!collections.TryGetValue(type, out var collection))
-        {
-            throw new ArgumentException($"Collection for type '{type.Name}' does not exist in database '{databaseName}'.");
-        }
-
-        return (IMongoCollection<T>)collection;
-    }
 }
-
-//fix controllers as well and finish up
